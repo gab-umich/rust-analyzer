@@ -216,13 +216,6 @@ pub(crate) fn highlight(db: &RootDatabase, file_id: FileId) -> Vec<HighlightedRa
 pub(crate) fn highlight_as_html(db: &RootDatabase, file_id: FileId, rainbow: bool) -> String {
     let parse = db.parse(file_id);
 
-    fn register_lifetime(hash: u64, var_name: &String, curr_line_num: usize, lt_table_ref: &mut FxHashMap<u64, (String, usize, usize)>) {
-        lt_table_ref.entry(hash).or_insert((var_name.to_string(), curr_line_num, curr_line_num));           // initialize a lifetime entry
-        if let Some(tuple) = lt_table_ref.get_mut(&hash) {
-            tuple.2 = curr_line_num;                                                                        // update a lifetime entry
-        }
-    }
-
     fn rainbowify(seed: u64) -> String {
         use rand::prelude::*;
         let mut rng = SmallRng::seed_from_u64(seed);
@@ -232,6 +225,28 @@ pub(crate) fn highlight_as_html(db: &RootDatabase, file_id: FileId, rainbow: boo
             s = rng.gen_range::<u16, _, _>(42, 99),
             l = rng.gen_range::<u16, _, _>(40, 91),
         )
+    }
+
+    fn register_lifetime(
+        hash: u64,
+        var_name: &String,
+        curr_line_num: usize,
+        lt_table_ref: &mut FxHashMap<u64, (String, usize, usize)>,
+        var_style_buf: &mut String
+    ) {
+        if !lt_table_ref.contains_key(&hash) {
+            var_style_buf.push_str(&format!(
+                r#"span[data-binding-hash="{hash}"]
+                    {{ color: {color}; }}{newline}"#,
+                hash = hash,
+                color = rainbowify(hash),
+                newline = "\n"
+            ));
+        }
+        lt_table_ref.entry(hash).or_insert((var_name.to_string(), curr_line_num, curr_line_num));           // initialize a lifetime entry
+        if let Some(tuple) = lt_table_ref.get_mut(&hash) {
+            tuple.2 = curr_line_num;                                                                        // update a lifetime entry
+        }
     }
 
     let mut ranges = highlight(db, file_id);
@@ -247,8 +262,6 @@ pub(crate) fn highlight_as_html(db: &RootDatabase, file_id: FileId, rainbow: boo
     let mut var_lifetime_table: FxHashMap<u64, (String, usize, usize)> = FxHashMap::default();
     let mut current_line_num: usize = 0;
 
-    var_style_buf.push_str(r#"span[data-binding-hash="17220992762358653836"]
-                    { color: hsl(133,88%,44%); }"#);
     code_buf.push_str("<div class=\"rustCode\"><pre><code>");
     let tokens = parse.tree().syntax().descendants_with_tokens().filter_map(|it| it.into_token());
     for token in tokens {
@@ -277,7 +290,7 @@ pub(crate) fn highlight_as_html(db: &RootDatabase, file_id: FileId, rainbow: boo
             
             let data_tag = match (rainbow, binding_hash) {
                 (true, Some(hash)) => {
-                    register_lifetime(hash, &text, current_line_num, &mut var_lifetime_table);
+                    register_lifetime(hash, &text, current_line_num, &mut var_lifetime_table, &mut var_style_buf);
                     format!(" data-binding-hash=\"{}\"", hash)
                 },
                 _ => "".into(),
